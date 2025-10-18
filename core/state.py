@@ -6,12 +6,17 @@ import threading
 from math import floor
 
 from utils.log import info, warning, error, debug
+from PIL import ImageGrab, ImageStat
 
 from utils.screenshot import capture_region, enhanced_screenshot
 from core.ocr import extract_text, extract_number
 from core.recognizer import match_template, count_pixels_of_color, find_color_of_pixel, closest_color, multi_match_templates
 
 import utils.constants as constants
+
+import pyautogui
+import time
+from core.ocr import extract_text
 
 stop_event = threading.Event()
 is_bot_running = False
@@ -28,6 +33,7 @@ STAT_CAPS = None
 SKILL_LIST = None
 CANCEL_CONSECUTIVE_RACE = None
 SLEEP_TIME_MULTIPLIER = 1
+DECK = {}
 
 def load_config():
   with open("config.json", "r", encoding="utf-8") as file:
@@ -39,6 +45,7 @@ def reload_config():
   global PRIORITY_EFFECTS_LIST, SKIP_TRAINING_ENERGY, NEVER_REST_ENERGY, SKIP_INFIRMARY_UNLESS_MISSING_ENERGY, PREFERRED_POSITION
   global ENABLE_POSITIONS_BY_RACE, POSITIONS_BY_RACE, POSITION_SELECTION_ENABLED, SLEEP_TIME_MULTIPLIER
   global WINDOW_NAME, RACE_SCHEDULE, CONFIG_NAME, USE_OPTIMAL_EVENT_CHOICE, EVENT_CHOICES
+  global DECK
 
   config = load_config()
 
@@ -67,6 +74,50 @@ def reload_config():
   CONFIG_NAME = config["config_name"]
   USE_OPTIMAL_EVENT_CHOICE = config["event"]["use_optimal_event_choice"]
   EVENT_CHOICES = config["event"]["event_choices"]
+  DECK = config['deck']
+
+def find_card_in_deck(hint_name):
+  """
+  Find a card in DECK by name. First tries exact match, then fuzzy matching.
+  DECK format: {"card_name": weight, ...}
+  Returns (card_name, weight, match_type) or (None, 0, None) if not found.
+  """
+  from rapidfuzz import fuzz
+  
+  if not DECK:
+    return None, 0, None
+  
+  # First try exact match (case-insensitive)
+  for card_name, weight in DECK.items():
+    if hint_name.lower() == card_name.lower():
+      debug(f"Exact match: '{hint_name}' = '{card_name}'")
+      return card_name, weight, "exact"
+  
+  # No exact match, try fuzzy matching
+  best_match_name = None
+  best_match_weight = 0
+  best_score = 0
+  
+  for card_name, weight in DECK.items():
+    # Try different similarity metrics
+    score = max(
+      fuzz.ratio(hint_name.lower(), card_name.lower()),
+      fuzz.partial_ratio(hint_name.lower(), card_name.lower()),
+      fuzz.token_sort_ratio(hint_name.lower(), card_name.lower())
+    )
+    
+    if score > best_score:
+      best_score = score
+      best_match_name = card_name
+      best_match_weight = weight
+  
+  # Only return if similarity is above threshold (e.g., 70%)
+  if best_score >= 70:
+    info(f"Fuzzy match: '{hint_name}' -> '{best_match_name}' (score: {best_score})")
+    return best_match_name, best_match_weight, "fuzzy"
+  else:
+    warning(f"No good match found for '{hint_name}' in DECK (best score: {best_score})")
+    return None, 0, None
 
 # Get Stat
 def stat_state():
@@ -81,12 +132,17 @@ def stat_state():
   result = {}
   for stat, region in stat_regions.items():
     img = enhanced_screenshot(region)
+
     val = extract_number(img)
     result[stat] = val
   return result
 
 # Check support card in each training
 def check_support_card(threshold=0.8, target="none"):
+  screen = ImageGrab.grab(bbox=constants.SUPPORT_CARD_ICON_BBOX)
+  screen = np.array(screen)  # currently RGB
+  screen = cv2.cvtColor(screen, cv2.COLOR_RGB2BGR)
+  time.sleep(0.15)
   SUPPORT_ICONS = {
     "spd": "assets/icons/support_card_type_spd.png",
     "sta": "assets/icons/support_card_type_sta.png",
@@ -94,6 +150,15 @@ def check_support_card(threshold=0.8, target="none"):
     "guts": "assets/icons/support_card_type_guts.png",
     "wit": "assets/icons/support_card_type_wit.png",
     "friend": "assets/icons/support_card_type_friend.png"
+  }
+
+  CARD_HINTS = {
+    'oguri_cap_power': 'assets/icons/oguri_cap_power.png',
+    'fine_motion_wit': 'assets/icons/fine_motion_wit.png',
+    'kitasan_black_speed': 'assets/icons/kitasan_black_speed.png',
+    'king_halo_speed' : 'assets/icons/king_halo_speed.png',
+    'super_creek_stamina': 'assets/icons/super_creek_stamina.png',
+    'manhattan_cafe_stamina': 'assets/icons/manhattan_cafe_stamina.png'
   }
 
   count_result = {}
@@ -110,6 +175,7 @@ def check_support_card(threshold=0.8, target="none"):
   count_result["total_hints"] = 0
   count_result["total_friendship_levels"] = {}
   count_result["hints_per_friend_level"] = {}
+  count_result['card_hints'] = {}
 
   for friend_level, color in SUPPORT_FRIEND_LEVELS.items():
     count_result["total_friendship_levels"][friend_level] = 0
@@ -121,6 +187,7 @@ def check_support_card(threshold=0.8, target="none"):
     count_result[key]["supports"] = 0
     count_result[key]["hints"] = 0
     count_result[key]["friendship_levels"]={}
+
 
     for friend_level, color in SUPPORT_FRIEND_LEVELS.items():
       count_result[key]["friendship_levels"][friend_level] = 0
@@ -145,16 +212,61 @@ def check_support_card(threshold=0.8, target="none"):
       count_result[key]["friendship_levels"][friend_level] += 1
       count_result["total_friendship_levels"][friend_level] += 1
 
+      
       if hint_matches:
+        # show how many hints there are
+        info(f"Found {len(hint_matches)} hint(s) for {key.upper()}")
         for hint_match in hint_matches:
           distance = abs(hint_match[1] - match[1])
           if distance < 45:
             count_result["total_hints"] += 1
             count_result[key]["hints"] += 1
             count_result["hints_per_friend_level"][friend_level] +=1
+            
+            # Click the hint icon
+            click_support_card_hints(hint_match)
+            time.sleep(0.3)
+            card_hint_name = get_hint_card_name()
+            # Close the support card window
+            click_outside_support_card_box()
+            
+            info(f"Hint card detected from OCR: '{card_hint_name}'")
+            
+            # Find the card in DECK (exact match first, then fuzzy)
+            card_name, card_weight, match_type = find_card_in_deck(card_hint_name)
+            
+            if card_name:
+              count_result['card_hints'][card_name] = card_weight
+              info(f"Matched to '{card_name}' ({match_type} match), weight: {card_weight}")
+            else:
+              count_result['card_hints'][card_hint_name] = 0
+              warning(f"No match found for '{card_hint_name}' in DECK, using weight 0")
+            time.sleep(0.3)
+      info(f"Support card found: {key.upper()}, Friendship Level: {friend_level.upper()}")
 
   return count_result
 
+# click support card hints
+def click_support_card_hints(hint_match):
+  # Click the hint icon
+  hint_x, hint_y, hint_w, hint_h = hint_match
+  # Calculate center of the hint icon
+  center_x = hint_x + hint_w // 2
+  center_y = hint_y + hint_h // 2
+  # Adjust to screen coordinates by adding the bbox offset
+  screen_x = center_x + constants.SUPPORT_CARD_ICON_BBOX[0]
+  screen_y = center_y + constants.SUPPORT_CARD_ICON_BBOX[1]
+  pyautogui.click(screen_x, screen_y, clicks=2, interval=0.2)
+  info(f"Hint icon clicked at ({screen_x}, {screen_y})")
+
+def get_hint_card_name():
+  hint_name_img = ImageGrab.grab(bbox=constants.SUPPORT_CARD_NAME_BBOX)
+  hint_name_text = extract_text(hint_name_img).lower()
+  
+  return hint_name_text
+
+def click_outside_support_card_box():
+  pyautogui.click(896, 499, clicks=2, interval=0.1)  # Click at top-left corner to defocus any pop-ups
 # Get failure chance (idk how to get energy value)
 def check_failure():
   failure = enhanced_screenshot(constants.FAILURE_REGION)

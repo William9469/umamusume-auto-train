@@ -16,6 +16,7 @@ from core.recognizer import is_btn_active, multi_match_templates
 from utils.scenario import ura
 from core.skill import buy_skill
 from core.events import event_choice, get_event_name
+import time
 
 templates = {
   "event": "assets/icons/event_choice_1.png",
@@ -94,6 +95,7 @@ def check_training():
     if pos:
       pyautogui.moveTo(pos, duration=0.1)
       pyautogui.mouseDown()
+      sleep(0.2)
       support_card_results = check_support_card()
 
       if key != "wit":
@@ -120,7 +122,8 @@ def check_training():
       support_card_results["failure"] = failure_chance
       results[key] = support_card_results
 
-      debug(f"[{key.upper()}] → Total Supports {support_card_results['total_supports']}, Levels:{support_card_results['total_friendship_levels']} , Fail: {failure_chance}%")
+      #debug(f"[{key.upper()}] → Total Supports {support_card_results['total_supports']}, Levels:{support_card_results['total_friendship_levels']} , Fail: {failure_chance}%")
+      debug(f"Hints: {support_card_results['card_hints']}")
       sleep(0.1)
 
   pyautogui.mouseUp()
@@ -542,14 +545,14 @@ def career_lobby():
       continue
 
     # Last, do training
-    sleep(0.5)
+    sleep(0.2)
     results_training = check_training()
 
     best_training = do_something(results_training)
     if best_training:
       go_to_training()
-      sleep(0.5)
+      sleep(0.2)
       do_train(best_training)
     else:
       do_rest(energy_level)
-    sleep(1)
+    sleep(0.5)

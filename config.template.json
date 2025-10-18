@@ -91,5 +91,13 @@
       }
     ]
   },
-  "window_name": "LDPlayer"
+  "window_name": "LDPlayer",
+  "deck": {
+    "kitasan black": 0.5,
+    "oguri cap": 1.0,
+    "king halo": 0.3,
+    "fine motion": 0.3,
+    "super creek": 0.3,
+    "manhattan cafe": 0
+  }
 }

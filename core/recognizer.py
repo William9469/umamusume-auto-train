@@ -5,13 +5,14 @@ from PIL import ImageGrab, ImageStat
 from utils.log import info, warning, error, debug
 from utils.screenshot import capture_region
 
-def match_template(template_path, region=None, threshold=0.85):
+def match_template(template_path, region=None, threshold=0.85, screen=None):
   # Get screenshot
-  if region:
-    screen = np.array(ImageGrab.grab(bbox=region))  # (left, top, right, bottom)
-  else:
-    screen = np.array(ImageGrab.grab())
-  screen = cv2.cvtColor(screen, cv2.COLOR_RGB2BGR)
+  if screen is None:
+    if region:
+      screen = np.array(ImageGrab.grab(bbox=region))  # (left, top, right, bottom)
+    else:
+      screen = np.array(ImageGrab.grab())
+    screen = cv2.cvtColor(screen, cv2.COLOR_RGB2BGR)
 
 #  cv2.namedWindow("image")
 #  cv2.moveWindow("image", -900, 0)
@@ -20,6 +21,7 @@ def match_template(template_path, region=None, threshold=0.85):
 
   # Load template
   template = cv2.imread(template_path, cv2.IMREAD_COLOR)  # safe default
+  template = template[:,:,:3]
   if template.shape[2] == 4:
     template = cv2.cvtColor(template, cv2.COLOR_BGRA2BGR)
   result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)

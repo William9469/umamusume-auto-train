@@ -118,9 +118,12 @@ def focus_max_friendships(results):
         if data["hints_per_friend_level"].get(level, 0) > 0:
             possible_friendship += bonus
             break
+    # add card hint value
+    possible_friendship += card_hint_value(data['card_hints'])
 
-    debug(f"{stat_name} : gray={data['total_friendship_levels']['gray']}, blue={data['total_friendship_levels']['blue']}, green={data['total_friendship_levels']['green']}, total={possible_friendship:.3f}")
+    debug(f"{stat_name} : gray={data['total_friendship_levels']['gray']}, blue={data['total_friendship_levels']['blue']}, green={data['total_friendship_levels']['green']}, card_hint_value: {card_hint_value(data['card_hints'])}, total={possible_friendship:.3f}")
     filtered_results[stat_name]["possible_friendship"] = possible_friendship
+
 
   best_key = max(filtered_results, key=lambda k: (filtered_results[k]["possible_friendship"], -get_stat_priority(k)))
   best_score = filtered_results[best_key]["possible_friendship"]
@@ -140,6 +143,8 @@ def rainbow_training(results):
     rainbow_points = total_rainbow_friends + data["total_supports"]
     if total_rainbow_friends > 0:
       rainbow_points = rainbow_points + 0.5
+    # add card hint value
+    rainbow_points += card_hint_value(data['card_hints'])
     rainbow_points = rainbow_points * multiplier
     rainbow_candidates[stat_name]["rainbow_points"] = rainbow_points
     rainbow_candidates[stat_name]["total_rainbow_friends"] = total_rainbow_friends
@@ -239,6 +244,17 @@ def decide_race_for_goal(year, turn, criteria, keywords):
       # if there's no specialized goal, just do any race
       return False, "any"
   return no_race
+
+def card_hint_value(card_hints):
+  highest = 0.1
+  card_name = ""
+  hint_value = 1.8
+  for card, weight in card_hints.items():
+    highest = max(highest, weight * hint_value)
+    if highest == weight * hint_value:
+      card_name = card
+  info(f"Card hint value calculated: {highest} (from {card_name})")
+  return highest
 
 def filter_races_by_aptitude(race_list, aptitudes):
   GRADE_SCORE = {"a": 2, "b": 1}

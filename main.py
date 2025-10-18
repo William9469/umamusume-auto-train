@@ -101,7 +101,7 @@ def hotkey_listener():
         state.is_bot_running = True
         state.bot_thread = threading.Thread(target=main, daemon=True)
         state.bot_thread.start()
-    sleep(0.5)
+    sleep(1)
 
 def start_server():
   res = pyautogui.resolution()
